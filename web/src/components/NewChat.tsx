@@ -39,7 +39,7 @@ export function NewChat({ currentUser, onBack, onStartChat }: NewChatProps) {
         return
       }
       const gh = await res.json() as { id: number; login: string }
-      const peerUid = String(gh.id)
+      const peerUid = `gh:${gh.id}`
       const chatId = makeChatId(currentUser.id, peerUid)
       const chat: Chat = {
         id: chatId,

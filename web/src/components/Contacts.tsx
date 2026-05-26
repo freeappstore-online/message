@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ArrowLeft, Users, UserPlus, Search, MessageCircle, Check, X, Clock, Globe } from 'lucide-react'
 import { getFas } from '../lib/fas'
-import { makeChatId, saveChat, type Chat } from '../lib/db'
+import { makeChatId, getOrCreateChat, type Chat } from '../lib/db'
 import type { User, Friend, FriendSearchResult } from '@freeappstore/sdk'
 
 type Tab = 'friends' | 'requests' | 'github' | 'search'
@@ -11,6 +11,8 @@ interface GhUser {
   login: string
   avatar_url: string
 }
+
+type GhLoadState = 'idle' | 'loading' | 'done'
 
 interface ContactsProps {
   currentUser: User
@@ -24,6 +26,7 @@ export function Contacts({ currentUser, onBack, onStartChat }: ContactsProps) {
   const [friends, setFriends] = useState<Friend[]>([])
   const [requests, setRequests] = useState<Friend[]>([])
   const [ghFollowing, setGhFollowing] = useState<GhUser[]>([])
+  const [ghLoadState, setGhLoadState] = useState<GhLoadState>('idle')
   const [searchResults, setSearchResults] = useState<FriendSearchResult[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(false)
@@ -50,6 +53,7 @@ export function Contacts({ currentUser, onBack, onStartChat }: ContactsProps) {
   }, [loadFriends])
 
   const loadGithubFollowing = async () => {
+    setGhLoadState('loading')
     setLoading(true)
     setError('')
     try {
@@ -57,11 +61,13 @@ export function Contacts({ currentUser, onBack, onStartChat }: ContactsProps) {
       if (res.status === 403) {
         setError('GitHub API rate limit. Try again later.')
         setLoading(false)
+        setGhLoadState('done')
         return
       }
       if (!res.ok) {
         setError('Failed to load GitHub following')
         setLoading(false)
+        setGhLoadState('done')
         return
       }
       const users = await res.json() as GhUser[]
@@ -69,6 +75,7 @@ export function Contacts({ currentUser, onBack, onStartChat }: ContactsProps) {
     } catch {
       setError('Failed to load GitHub following')
     }
+    setGhLoadState('done')
     setLoading(false)
   }
 
@@ -111,19 +118,18 @@ export function Contacts({ currentUser, onBack, onStartChat }: ContactsProps) {
 
   const openChat = async (peerUid: string, peerLogin: string) => {
     const chatId = makeChatId(currentUser.id, peerUid)
-    const chat: Chat = {
+    const chat = await getOrCreateChat({
       id: chatId,
       peerLogin,
       peerUid,
       lastMessage: '',
       lastTs: Date.now(),
-    }
-    await saveChat(chat)
+    })
     onStartChat(chat)
   }
 
   const openChatFromGh = async (gh: GhUser) => {
-    await openChat(String(gh.id), gh.login)
+    await openChat(`gh:${gh.id}`, gh.login)
   }
 
   const tabs: { key: Tab; label: string; badge?: number }[] = [
@@ -150,7 +156,7 @@ export function Contacts({ currentUser, onBack, onStartChat }: ContactsProps) {
             onClick={() => {
               setTab(t.key)
               setError('')
-              if (t.key === 'github' && ghFollowing.length === 0) loadGithubFollowing()
+              if (t.key === 'github' && ghLoadState === 'idle') loadGithubFollowing()
             }}
             className={`relative flex-1 px-2 py-2.5 text-center text-xs font-medium transition ${
               tab === t.key
@@ -257,10 +263,12 @@ export function Contacts({ currentUser, onBack, onStartChat }: ContactsProps) {
 
         {/* GitHub following tab */}
         {tab === 'github' && !loading && (
-          ghFollowing.length === 0 && !error ? (
+          ghFollowing.length === 0 ? (
             <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
               <Globe size={32} className="text-[var(--muted)]" />
-              <p className="text-sm text-[var(--muted)]">Loading your GitHub following...</p>
+              <p className="text-sm text-[var(--muted)]">
+                {ghLoadState === 'done' ? "You're not following anyone on GitHub" : 'Loading your GitHub following...'}
+              </p>
             </div>
           ) : (
             <>
@@ -275,7 +283,7 @@ export function Contacts({ currentUser, onBack, onStartChat }: ContactsProps) {
                       <span className="font-medium">@{gh.login}</span>
                     </div>
                     <button
-                      onClick={() => sendRequest(String(gh.id))}
+                      onClick={() => sendRequest(`gh:${gh.id}`)}
                       disabled={actionLoading === String(gh.id)}
                       className="rounded-lg p-2 text-[var(--muted)] transition hover:bg-[var(--line)] disabled:opacity-40"
                       title="Add friend"

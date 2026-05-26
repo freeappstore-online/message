@@ -3,6 +3,7 @@ import { ArrowLeft, Send } from 'lucide-react'
 import { getFas } from '../lib/fas'
 import { getMessages, saveMessage, saveChat, type StoredMessage } from '../lib/db'
 import { pushToOutbox, removeFromOutbox } from '../lib/mailbox'
+import { loadPrefs } from '../lib/prefs'
 import type { User, Room, ConnectionState } from '@freeappstore/sdk'
 import type { Chat } from '../lib/db'
 
@@ -33,12 +34,15 @@ function waitForOpen(room: Room): Promise<boolean> {
   })
 }
 
+const FONT_SIZE_MAP = { small: 'text-xs', default: 'text-sm', large: 'text-base' } as const
+
 export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
   const [messages, setMessages] = useState<StoredMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const [prefs] = useState(loadPrefs)
 
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -147,7 +151,7 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
             return (
               <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                 <div
-                  className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
+                  className={`max-w-[75%] rounded-2xl px-3 py-2 ${FONT_SIZE_MAP[prefs.fontSize]} ${
                     isMine
                       ? 'bg-[var(--sent)] text-white'
                       : 'bg-[var(--received)] text-[var(--ink)]'
@@ -174,6 +178,12 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && prefs.enterToSend) {
+              e.preventDefault()
+              handleSend()
+            }
+          }}
           placeholder="Type a message..."
           className="flex-1 rounded-xl bg-[var(--received)] px-4 py-2.5 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
           autoFocus

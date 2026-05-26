@@ -3,6 +3,7 @@ import { ArrowLeft, LogOut, Trash2, MessageCircle, Bell, Keyboard, Type } from '
 import { getFas } from '../lib/fas'
 import { useAuth } from '@freeappstore/sdk/hooks'
 import { loadPrefs, savePrefs, type Prefs } from '../lib/prefs'
+import { clearAllData } from '../lib/db'
 
 interface ProfileProps {
   onBack: () => void
@@ -25,21 +26,17 @@ export function Profile({ onBack }: ProfileProps) {
   const handleDeleteAccount = async () => {
     setDeleting(true)
     try {
+      await clearAllData()
+      localStorage.removeItem('message-prefs')
       await deleteAccount()
-      clearLocalData()
     } catch {
       setDeleting(false)
       setShowDeleteConfirm(false)
     }
   }
 
-  const clearLocalData = () => {
-    indexedDB.deleteDatabase('message-app')
-    localStorage.removeItem('message-prefs')
-  }
-
-  const handleClearData = () => {
-    clearLocalData()
+  const handleClearData = async () => {
+    await clearAllData()
     setShowClearConfirm(false)
     onBack()
   }

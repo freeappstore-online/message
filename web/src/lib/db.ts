@@ -77,6 +77,26 @@ export async function saveChat(chat: Chat): Promise<void> {
   })
 }
 
+export async function getOrCreateChat(chat: Chat): Promise<Chat> {
+  const db = await getDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('chats', 'readwrite')
+    const store = tx.objectStore('chats')
+    const getReq = store.get(chat.id)
+    getReq.onsuccess = () => {
+      const existing = getReq.result as Chat | undefined
+      if (existing) {
+        resolve(existing)
+      } else {
+        store.put(chat)
+        tx.oncomplete = () => resolve(chat)
+      }
+    }
+    getReq.onerror = () => reject(getReq.error)
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
 export async function getChats(): Promise<Chat[]> {
   const db = await getDb()
   return new Promise((resolve, reject) => {
@@ -93,4 +113,17 @@ export async function getChats(): Promise<Chat[]> {
 
 export function makeChatId(uid1: string, uid2: string): string {
   return [uid1, uid2].sort().join(':')
+}
+
+export async function clearAllData(): Promise<void> {
+  if (dbPromise) {
+    const db = await dbPromise
+    db.close()
+    dbPromise = null
+  }
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(DB_NAME)
+    req.onsuccess = () => resolve()
+    req.onerror = () => reject(req.error)
+  })
 }
