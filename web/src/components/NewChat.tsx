@@ -28,6 +28,11 @@ export function NewChat({ currentUser, onBack, onStartChat }: NewChatProps) {
     // Verify GitHub user exists
     try {
       const res = await fetch(`https://api.github.com/users/${encodeURIComponent(login)}`)
+      if (res.status === 403) {
+        setError('GitHub API rate limit reached. Try again in a few minutes.')
+        setLoading(false)
+        return
+      }
       if (!res.ok) {
         setError('GitHub user not found')
         setLoading(false)

@@ -1,24 +1,36 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ArrowLeft, Send } from 'lucide-react'
 import { getFas } from '../lib/fas'
-import { getMessages, saveMessage, saveChat, makeChatId, type StoredMessage } from '../lib/db'
-import { pushToMailbox } from '../lib/mailbox'
-import type { User, RoomMessage } from '@freeappstore/sdk'
+import { getMessages, saveMessage, saveChat, type StoredMessage } from '../lib/db'
+import { pushToOutbox, removeFromOutbox } from '../lib/mailbox'
+import type { User, Room, ConnectionState } from '@freeappstore/sdk'
 import type { Chat } from '../lib/db'
-
-interface MsgPayload {
-  id: string
-  text: string
-  fromLogin: string
-  fromUid: string
-  toUid: string
-  ts: number
-}
 
 interface ChatViewProps {
   chat: Chat
   currentUser: User
   onBack: () => void
+}
+
+function waitForOpen(room: Room): Promise<boolean> {
+  if (room.state === 'open') return Promise.resolve(true)
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      off()
+      resolve(false)
+    }, 5000)
+    const off = room.onConnectionState((s: ConnectionState) => {
+      if (s === 'open') {
+        clearTimeout(timeout)
+        off()
+        resolve(true)
+      } else if (s === 'error' || s === 'closed') {
+        clearTimeout(timeout)
+        off()
+        resolve(false)
+      }
+    })
+  })
 }
 
 export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
@@ -39,31 +51,21 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
     })
   }, [chat.id, scrollToBottom])
 
-  // Listen for incoming messages in this chat
+  // Subscribe to new messages for this chat from the App-level handler
+  // via a custom event instead of opening a second room connection.
   useEffect(() => {
-    const fas = getFas()
-    const room = fas.rooms.join(`inbox-${currentUser.id}`)
-    const off = room.onMessage<MsgPayload>(async (msg: RoomMessage<MsgPayload>) => {
-      const payload = msg.data
-      const chatId = makeChatId(currentUser.id, payload.fromUid)
-      if (chatId !== chat.id) return
-      const stored: StoredMessage = {
-        id: payload.id,
-        chatId,
-        from: payload.fromUid,
-        fromLogin: payload.fromLogin,
-        text: payload.text,
-        ts: payload.ts,
-      }
-      await saveMessage(stored)
-      setMessages((prev) => [...prev, stored])
+    const handler = (e: Event) => {
+      const msg = (e as CustomEvent<StoredMessage>).detail
+      if (msg.chatId !== chat.id) return
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev
+        return [...prev, msg]
+      })
       scrollToBottom()
-    })
-    return () => {
-      off()
-      room.close()
     }
-  }, [chat.id, currentUser.id, scrollToBottom])
+    window.addEventListener('message-incoming', handler)
+    return () => window.removeEventListener('message-incoming', handler)
+  }, [chat.id, scrollToBottom])
 
   const handleSend = async () => {
     const text = input.trim()
@@ -74,11 +76,10 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
     const fas = getFas()
     const msgId = crypto.randomUUID()
     const ts = Date.now()
-    const chatId = chat.id
 
     const stored: StoredMessage = {
       id: msgId,
-      chatId,
+      chatId: chat.id,
       from: currentUser.id,
       fromLogin: currentUser.login,
       text,
@@ -90,7 +91,7 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
     setMessages((prev) => [...prev, stored])
     scrollToBottom()
 
-    const payload: MsgPayload = {
+    const payload = {
       id: msgId,
       text,
       fromLogin: currentUser.login,
@@ -99,19 +100,28 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
       ts,
     }
 
-    // Try to relay via the recipient's inbox room
-    const peerRoom = fas.rooms.join(`inbox-${chat.peerUid}`)
-    peerRoom.send(payload)
-
-    // Also drop in KV mailbox as fallback for offline delivery
+    // Save to outbox first (cleared on confirmed delivery)
+    const outboxMsg = { ...stored, toUid: chat.peerUid }
     try {
-      await pushToMailbox(chat.peerUid, stored)
+      await pushToOutbox(outboxMsg)
     } catch {
-      // Non-fatal — real-time delivery may still work
+      // Non-fatal
     }
 
-    // Close the send-only room connection after a brief delay
+    // Connect to recipient's inbox room and wait for the socket to open
+    const peerRoom = fas.rooms.join(`inbox-${chat.peerUid}`)
+    const opened = await waitForOpen(peerRoom)
+    if (opened) {
+      peerRoom.send(payload)
+      // If send succeeded, remove from outbox
+      try {
+        await removeFromOutbox(msgId)
+      } catch {
+        // Non-fatal
+      }
+    }
     setTimeout(() => peerRoom.close(), 2000)
+
     setSending(false)
     inputRef.current?.focus()
   }

@@ -5,9 +5,9 @@ import { ChatList } from './components/ChatList'
 import { ChatView } from './components/ChatView'
 import { NewChat } from './components/NewChat'
 import { SignIn } from './components/SignIn'
-import { drainMailbox } from './lib/mailbox'
-import { saveMessage, saveChat, getChats, makeChatId, type Chat } from './lib/db'
-import type { RoomMessage } from '@freeappstore/sdk'
+import { drainOutbox, removeFromOutbox, drainLegacyMailbox } from './lib/mailbox'
+import { saveMessage, saveChat, getChats, makeChatId, type Chat, type StoredMessage } from './lib/db'
+import type { RoomMessage, ConnectionState } from '@freeappstore/sdk'
 
 interface MsgPayload {
   id: string
@@ -34,8 +34,8 @@ export default function App() {
     if (!user) return
     refreshChats()
 
-    // Drain offline mailbox on login
-    drainMailbox().then(async (msgs) => {
+    // Drain legacy mailbox keys (from prior version)
+    drainLegacyMailbox().then(async (msgs) => {
       for (const msg of msgs) {
         await saveMessage(msg)
         await saveChat({
@@ -48,7 +48,34 @@ export default function App() {
       }
       if (msgs.length > 0) refreshChats()
     })
-  }, [user, refreshChats])
+
+    // Retry sending outbox messages
+    drainOutbox().then(async (msgs) => {
+      for (const msg of msgs) {
+        const peerRoom = fas.rooms.join(`inbox-${msg.toUid}`)
+        const opened = await new Promise<boolean>((resolve) => {
+          if (peerRoom.state === 'open') { resolve(true); return }
+          const timeout = setTimeout(() => { off(); resolve(false) }, 5000)
+          const off = peerRoom.onConnectionState((s: ConnectionState) => {
+            if (s === 'open') { clearTimeout(timeout); off(); resolve(true) }
+            else if (s === 'error' || s === 'closed') { clearTimeout(timeout); off(); resolve(false) }
+          })
+        })
+        if (opened) {
+          peerRoom.send({
+            id: msg.id,
+            text: msg.text,
+            fromLogin: msg.fromLogin,
+            fromUid: msg.from,
+            toUid: msg.toUid,
+            ts: msg.ts,
+          })
+          try { await removeFromOutbox(msg.id) } catch { /* non-fatal */ }
+        }
+        setTimeout(() => peerRoom.close(), 2000)
+      }
+    })
+  }, [user, fas.rooms, refreshChats])
 
   // Listen on personal inbox room for incoming messages
   useEffect(() => {
@@ -57,7 +84,7 @@ export default function App() {
     const off = room.onMessage<MsgPayload>(async (msg: RoomMessage<MsgPayload>) => {
       const payload = msg.data
       const chatId = makeChatId(user.id, payload.fromUid)
-      const stored = {
+      const stored: StoredMessage = {
         id: payload.id,
         chatId,
         from: payload.fromUid,
@@ -74,6 +101,8 @@ export default function App() {
         lastTs: payload.ts,
       })
       refreshChats()
+      // Dispatch to ChatView if it's open
+      window.dispatchEvent(new CustomEvent('message-incoming', { detail: stored }))
     })
     return () => {
       off()

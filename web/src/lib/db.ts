@@ -58,7 +58,11 @@ export async function getMessages(chatId: string): Promise<StoredMessage[]> {
     const tx = db.transaction('messages', 'readonly')
     const idx = tx.objectStore('messages').index('byChatId')
     const req = idx.getAll(chatId)
-    req.onsuccess = () => resolve(req.result as StoredMessage[])
+    req.onsuccess = () => {
+      const msgs = req.result as StoredMessage[]
+      msgs.sort((a, b) => a.ts - b.ts)
+      resolve(msgs)
+    }
     req.onerror = () => reject(req.error)
   })
 }
