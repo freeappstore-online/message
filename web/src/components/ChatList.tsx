@@ -1,11 +1,13 @@
-import { MessageCircle, Plus, LogOut } from 'lucide-react'
-import { getFas } from '../lib/fas'
+import { MessageCircle, Plus } from 'lucide-react'
 import type { Chat } from '../lib/db'
+import type { User } from '@freeappstore/sdk'
 
 interface ChatListProps {
   chats: Chat[]
+  currentUser: User
   onSelect: (chat: Chat) => void
   onNewChat: () => void
+  onProfile: () => void
 }
 
 function timeAgo(ts: number): string {
@@ -19,7 +21,7 @@ function timeAgo(ts: number): string {
   return `${days}d`
 }
 
-export function ChatList({ chats, onSelect, onNewChat }: ChatListProps) {
+export function ChatList({ chats, currentUser, onSelect, onNewChat, onProfile }: ChatListProps) {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
@@ -36,11 +38,15 @@ export function ChatList({ chats, onSelect, onNewChat }: ChatListProps) {
             <Plus size={20} />
           </button>
           <button
-            onClick={() => getFas().auth.signOut()}
-            className="rounded-lg p-2 text-[var(--muted)] transition hover:bg-[var(--line)]"
-            title="Sign out"
+            onClick={onProfile}
+            className="rounded-full transition hover:ring-2 hover:ring-[var(--accent)]"
+            title="Profile"
           >
-            <LogOut size={18} />
+            <img
+              src={currentUser.avatarUrl ?? `https://github.com/${currentUser.login}.png?size=64`}
+              alt=""
+              className="h-8 w-8 rounded-full"
+            />
           </button>
         </div>
       </header>
