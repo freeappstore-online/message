@@ -1,4 +1,4 @@
-import { MessageCircle, Plus } from 'lucide-react'
+import { MessageCircle, Plus, Users } from 'lucide-react'
 import type { Chat } from '../lib/db'
 import type { User } from '@freeappstore/sdk'
 
@@ -7,6 +7,7 @@ interface ChatListProps {
   currentUser: User
   onSelect: (chat: Chat) => void
   onNewChat: () => void
+  onContacts: () => void
   onProfile: () => void
 }
 
@@ -21,7 +22,7 @@ function timeAgo(ts: number): string {
   return `${days}d`
 }
 
-export function ChatList({ chats, currentUser, onSelect, onNewChat, onProfile }: ChatListProps) {
+export function ChatList({ chats, currentUser, onSelect, onNewChat, onContacts, onProfile }: ChatListProps) {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
@@ -30,6 +31,13 @@ export function ChatList({ chats, currentUser, onSelect, onNewChat, onProfile }:
           <h1 className="text-lg font-bold">Message</h1>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={onContacts}
+            className="rounded-lg p-2 transition hover:bg-[var(--line)]"
+            title="Contacts"
+          >
+            <Users size={20} />
+          </button>
           <button
             onClick={onNewChat}
             className="rounded-lg p-2 transition hover:bg-[var(--line)]"

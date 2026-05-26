@@ -4,6 +4,7 @@ import { useAuth } from '@freeappstore/sdk/hooks'
 import { ChatList } from './components/ChatList'
 import { ChatView } from './components/ChatView'
 import { NewChat } from './components/NewChat'
+import { Contacts } from './components/Contacts'
 import { Profile } from './components/Profile'
 import { SignIn } from './components/SignIn'
 import { drainOutbox, removeFromOutbox, drainLegacyMailbox } from './lib/mailbox'
@@ -25,6 +26,7 @@ export default function App() {
   const [chats, setChats] = useState<Chat[]>([])
   const [activeChat, setActiveChat] = useState<Chat | null>(null)
   const [showNewChat, setShowNewChat] = useState(false)
+  const [showContacts, setShowContacts] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
 
   const refreshChats = useCallback(async () => {
@@ -126,6 +128,20 @@ export default function App() {
     return <Profile onBack={() => setShowProfile(false)} />
   }
 
+  if (showContacts) {
+    return (
+      <Contacts
+        currentUser={user}
+        onBack={() => setShowContacts(false)}
+        onStartChat={(chat) => {
+          setShowContacts(false)
+          setActiveChat(chat)
+          refreshChats()
+        }}
+      />
+    )
+  }
+
   if (showNewChat) {
     return (
       <NewChat
@@ -159,6 +175,7 @@ export default function App() {
       currentUser={user}
       onSelect={setActiveChat}
       onNewChat={() => setShowNewChat(true)}
+      onContacts={() => setShowContacts(true)}
       onProfile={() => setShowProfile(true)}
     />
   )
