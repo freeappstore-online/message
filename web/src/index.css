@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@layer base {
+
+:root {
+  color-scheme: dark;
+  --paper: #111111;
+  --paper-deep: #0a0a0a;
+  --ink: #f0f0f0;
+  --muted: #888888;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --panel: rgba(30, 30, 30, 0.9);
+  --accent: #3b82f6;
+  --accent-soft: #1e40af;
+  --sent: #3b82f6;
+  --received: #262626;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+}
