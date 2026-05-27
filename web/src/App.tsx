@@ -195,6 +195,7 @@ export default function App() {
       onNewChat={() => setShowNewChat(true)}
       onContacts={() => setShowContacts(true)}
       onProfile={() => setShowProfile(true)}
+      onRefresh={refreshChats}
     />
   )
 }

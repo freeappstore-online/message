@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { ArrowLeft, Send, Check, CheckCheck, Clock } from 'lucide-react'
+import { ArrowLeft, Send, Check, CheckCheck, Clock, Copy, Trash2, X } from 'lucide-react'
 import { getFas } from '../lib/fas'
-import { getMessages, saveMessage, saveChat, type StoredMessage } from '../lib/db'
+import { getMessages, saveMessage, saveChat, deleteMessage, type StoredMessage } from '../lib/db'
 import { pushToOutbox, removeFromOutbox } from '../lib/mailbox'
 import { loadPrefs } from '../lib/prefs'
 import { MessageContent } from './MessageContent'
@@ -37,6 +37,22 @@ function waitForOpen(room: Room): Promise<boolean> {
 
 const FONT_SIZE_MAP = { small: 'text-xs', default: 'text-sm', large: 'text-base' } as const
 
+function isSameDay(ts1: number, ts2: number): boolean {
+  const d1 = new Date(ts1)
+  const d2 = new Date(ts2)
+  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate()
+}
+
+function formatDayLabel(ts: number): string {
+  const d = new Date(ts)
+  const now = new Date()
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (isSameDay(ts, now.getTime())) return 'Today'
+  if (isSameDay(ts, yesterday.getTime())) return 'Yesterday'
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
 type DeliveryStatus = 'sending' | 'sent' | 'delivered'
 
 export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
@@ -45,6 +61,8 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
   const [sending, setSending] = useState(false)
   const [peerTyping, setPeerTyping] = useState(false)
   const [deliveryMap, setDeliveryMap] = useState<Map<string, DeliveryStatus>>(new Map())
+  const [contextMsg, setContextMsg] = useState<StoredMessage | null>(null)
+  const [toast, setToast] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -202,26 +220,41 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
               </p>
             </div>
           )}
-          {messages.map((msg) => {
+          {messages.map((msg, idx) => {
             const isMine = msg.from === currentUser.id
             const delivery = deliveryMap.get(msg.id)
+            const prevMsg = messages[idx - 1]
+            const showDaySep = !prevMsg || !isSameDay(prevMsg.ts, msg.ts)
             return (
-              <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+              <div key={msg.id}>
+                {showDaySep && (
+                  <div className="my-3 flex items-center gap-3">
+                    <div className="flex-1 border-t border-[var(--line)]" />
+                    <span className="text-[0.65rem] font-medium text-[var(--muted)]">{formatDayLabel(msg.ts)}</span>
+                    <div className="flex-1 border-t border-[var(--line)]" />
+                  </div>
+                )}
                 <div
-                  className={`max-w-[75%] rounded-2xl px-3 py-2 ${FONT_SIZE_MAP[prefs.fontSize]} ${
-                    isMine
-                      ? 'bg-[var(--sent)] text-white'
-                      : 'bg-[var(--received)] text-[var(--ink)]'
-                  }`}
+                  className={`group flex ${isMine ? 'justify-end' : 'justify-start'}`}
+                  onContextMenu={(e) => { e.preventDefault(); setContextMsg(msg) }}
+                  onClick={() => { if (contextMsg) setContextMsg(null) }}
                 >
-                  <MessageContent text={msg.text} isMine={isMine} />
-                  <div className={`mt-1 flex items-center gap-1 ${isMine ? 'justify-end' : ''}`}>
-                    <span className={`text-[0.65rem] ${isMine ? 'text-blue-200' : 'text-[var(--muted)]'}`}>
-                      {new Date(msg.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    {isMine && delivery === 'sending' && <Clock size={10} className="text-blue-200/60" />}
-                    {isMine && delivery === 'sent' && <Check size={10} className="text-blue-200" />}
-                    {isMine && delivery === 'delivered' && <CheckCheck size={10} className="text-blue-200" />}
+                  <div
+                    className={`max-w-[75%] rounded-2xl px-3 py-2 ${FONT_SIZE_MAP[prefs.fontSize]} ${
+                      isMine
+                        ? 'bg-[var(--sent)] text-white'
+                        : 'bg-[var(--received)] text-[var(--ink)]'
+                    }`}
+                  >
+                    <MessageContent text={msg.text} isMine={isMine} />
+                    <div className={`mt-1 flex items-center gap-1 ${isMine ? 'justify-end' : ''}`}>
+                      <span className={`text-[0.65rem] ${isMine ? 'text-blue-200' : 'text-[var(--muted)]'}`}>
+                        {new Date(msg.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      {isMine && delivery === 'sending' && <Clock size={10} className="text-blue-200/60" />}
+                      {isMine && delivery === 'sent' && <Check size={10} className="text-blue-200" />}
+                      {isMine && delivery === 'delivered' && <CheckCheck size={10} className="text-blue-200" />}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -272,6 +305,52 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
           <Send size={18} />
         </button>
       </form>
+
+      {contextMsg && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 pb-6" onClick={() => setContextMsg(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-[var(--paper)] p-2" onClick={(e) => e.stopPropagation()}>
+            <p className="truncate px-3 py-2 text-xs text-[var(--muted)]">{contextMsg.text}</p>
+            <button
+              onClick={async () => {
+                await navigator.clipboard.writeText(contextMsg.text)
+                setContextMsg(null)
+                setToast('Copied')
+                setTimeout(() => setToast(''), 1500)
+              }}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm transition hover:bg-[var(--line)]"
+            >
+              <Copy size={16} className="text-[var(--muted)]" />
+              Copy text
+            </button>
+            <button
+              onClick={async () => {
+                await deleteMessage(contextMsg.id)
+                setMessages((prev) => prev.filter((m) => m.id !== contextMsg.id))
+                setContextMsg(null)
+                setToast('Deleted')
+                setTimeout(() => setToast(''), 1500)
+              }}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm text-red-400 transition hover:bg-[var(--line)]"
+            >
+              <Trash2 size={16} />
+              Delete message
+            </button>
+            <button
+              onClick={() => setContextMsg(null)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm text-[var(--muted)] transition hover:bg-[var(--line)]"
+            >
+              <X size={14} />
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="pointer-events-none fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-[var(--ink)] px-4 py-2 text-sm font-medium text-[var(--paper)]">
+          {toast}
+        </div>
+      )}
     </div>
   )
 }

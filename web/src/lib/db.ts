@@ -115,6 +115,54 @@ export function makeChatId(uid1: string, uid2: string): string {
   return [uid1, uid2].sort().join(':')
 }
 
+export async function deleteChat(chatId: string): Promise<void> {
+  const db = await getDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['chats', 'messages'], 'readwrite')
+    tx.objectStore('chats').delete(chatId)
+    const msgStore = tx.objectStore('messages')
+    const idx = msgStore.index('byChatId')
+    const cursorReq = idx.openCursor(chatId)
+    cursorReq.onsuccess = () => {
+      const cursor = cursorReq.result
+      if (cursor) {
+        cursor.delete()
+        cursor.continue()
+      }
+    }
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
+export async function deleteMessage(msgId: string): Promise<void> {
+  const db = await getDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('messages', 'readwrite')
+    tx.objectStore('messages').delete(msgId)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
+export async function searchMessages(query: string): Promise<StoredMessage[]> {
+  const db = await getDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('messages', 'readonly')
+    const req = tx.objectStore('messages').getAll()
+    req.onsuccess = () => {
+      const all = req.result as StoredMessage[]
+      const q = query.toLowerCase()
+      const matches = all
+        .filter((m) => m.text.toLowerCase().includes(q))
+        .sort((a, b) => b.ts - a.ts)
+        .slice(0, 50)
+      resolve(matches)
+    }
+    req.onerror = () => reject(req.error)
+  })
+}
+
 export async function clearAllData(): Promise<void> {
   if (dbPromise) {
     const db = await dbPromise
