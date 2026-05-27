@@ -20,6 +20,13 @@ interface MsgPayload {
   ts: number
 }
 
+interface TypingPayload {
+  type: 'typing'
+  fromUid: string
+  fromLogin: string
+  chatId: string
+}
+
 export default function App() {
   const fas = getFas()
   const { user, loading } = useAuth(fas)
@@ -81,31 +88,42 @@ export default function App() {
     })
   }, [user, fas.rooms, refreshChats])
 
-  // Listen on personal inbox room for incoming messages
+  // Listen on personal inbox room for incoming messages and typing indicators
   useEffect(() => {
     if (!user) return
     const room = fas.rooms.join(`inbox-${user.id}`)
-    const off = room.onMessage<MsgPayload>(async (msg: RoomMessage<MsgPayload>) => {
+    const off = room.onMessage<MsgPayload | TypingPayload>(async (msg: RoomMessage<MsgPayload | TypingPayload>) => {
       const payload = msg.data
-      const chatId = makeChatId(user.id, payload.fromUid)
+
+      // Typing indicator
+      if ('type' in payload && payload.type === 'typing') {
+        const chatId = makeChatId(user.id, payload.fromUid)
+        window.dispatchEvent(new CustomEvent('message-incoming', {
+          detail: { type: 'typing', chatId },
+        }))
+        return
+      }
+
+      // Regular message
+      const msgPayload = payload as MsgPayload
+      const chatId = makeChatId(user.id, msgPayload.fromUid)
       const stored: StoredMessage = {
-        id: payload.id,
+        id: msgPayload.id,
         chatId,
-        from: payload.fromUid,
-        fromLogin: payload.fromLogin,
-        text: payload.text,
-        ts: payload.ts,
+        from: msgPayload.fromUid,
+        fromLogin: msgPayload.fromLogin,
+        text: msgPayload.text,
+        ts: msgPayload.ts,
       }
       await saveMessage(stored)
       await saveChat({
         id: chatId,
-        peerLogin: payload.fromLogin,
-        peerUid: payload.fromUid,
-        lastMessage: payload.text,
-        lastTs: payload.ts,
+        peerLogin: msgPayload.fromLogin,
+        peerUid: msgPayload.fromUid,
+        lastMessage: msgPayload.text,
+        lastTs: msgPayload.ts,
       })
       refreshChats()
-      // Dispatch to ChatView if it's open
       window.dispatchEvent(new CustomEvent('message-incoming', { detail: stored }))
     })
     return () => {
