@@ -112,7 +112,7 @@ export async function getChats(): Promise<Chat[]> {
 }
 
 export function makeChatId(uid1: string, uid2: string): string {
-  return [uid1, uid2].sort().join(':')
+  return [uid1, uid2].sort().join('|')
 }
 
 export async function deleteChat(chatId: string): Promise<void> {

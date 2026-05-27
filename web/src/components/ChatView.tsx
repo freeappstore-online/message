@@ -63,6 +63,7 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
   const [deliveryMap, setDeliveryMap] = useState<Map<string, DeliveryStatus>>(new Map())
   const [contextMsg, setContextMsg] = useState<StoredMessage | null>(null)
   const [toast, setToast] = useState('')
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -107,12 +108,17 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
 
   const typingRoomRef = useRef<Room | null>(null)
   const typingCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sendRoomRef = useRef<Room | null>(null)
+  const sendCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     return () => {
       typingRoomRef.current?.close()
       typingRoomRef.current = null
       if (typingCloseTimer.current) clearTimeout(typingCloseTimer.current)
+      sendRoomRef.current?.close()
+      sendRoomRef.current = null
+      if (sendCloseTimer.current) clearTimeout(sendCloseTimer.current)
     }
   }, [chat.peerUid])
 
@@ -199,16 +205,26 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
     const outboxMsg = { ...stored, toUid: chat.peerUid }
     try { await pushToOutbox(outboxMsg) } catch { /* non-fatal */ }
 
-    const peerRoom = fas.rooms.join(`inbox-${chat.peerUid}`)
-    const opened = await waitForOpen(peerRoom)
+    // Reuse a single room for sends to this peer
+    if (sendCloseTimer.current) clearTimeout(sendCloseTimer.current)
+    let room = sendRoomRef.current
+    if (!room || room.state === 'closed' || room.state === 'error') {
+      room?.close()
+      room = fas.rooms.join(`inbox-${chat.peerUid}`)
+      sendRoomRef.current = room
+    }
+    const opened = await waitForOpen(room)
     if (opened) {
-      peerRoom.send(payload)
+      room.send(payload)
       setDelivery(msgId, 'sent')
       try { await removeFromOutbox(msgId) } catch { /* non-fatal */ }
     } else {
       setDelivery(msgId, 'sending')
     }
-    setTimeout(() => peerRoom.close(), 2000)
+    sendCloseTimer.current = setTimeout(() => {
+      sendRoomRef.current?.close()
+      sendRoomRef.current = null
+    }, 5000)
 
     setSending(false)
     inputRef.current?.focus()
@@ -264,7 +280,6 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
                 <div
                   className={`group flex ${isMine ? 'justify-end' : 'justify-start'}`}
                   onContextMenu={(e) => { e.preventDefault(); setContextMsg(msg) }}
-                  onClick={() => { if (contextMsg) setContextMsg(null) }}
                 >
                   <div
                     className={`max-w-[75%] rounded-2xl px-3 py-2 ${FONT_SIZE_MAP[prefs.fontSize]} ${
@@ -315,9 +330,9 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
             if (e.target.value.trim()) sendTypingIndicator()
           }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && prefs.enterToSend) {
+            if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
-              handleSend()
+              if (prefs.enterToSend) handleSend()
             }
           }}
           placeholder="Type a message..."
@@ -352,8 +367,9 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
                   document.body.removeChild(ta)
                 }
                 setContextMsg(null)
+                if (toastTimer.current) clearTimeout(toastTimer.current)
                 setToast('Copied')
-                setTimeout(() => setToast(''), 1500)
+                toastTimer.current = setTimeout(() => setToast(''), 1500)
               }}
               className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm transition hover:bg-[var(--line)]"
             >
@@ -365,8 +381,9 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
                 await deleteMessage(contextMsg.id)
                 setMessages((prev) => prev.filter((m) => m.id !== contextMsg.id))
                 setContextMsg(null)
+                if (toastTimer.current) clearTimeout(toastTimer.current)
                 setToast('Deleted')
-                setTimeout(() => setToast(''), 1500)
+                toastTimer.current = setTimeout(() => setToast(''), 1500)
               }}
               className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm text-red-400 transition hover:bg-[var(--line)]"
             >

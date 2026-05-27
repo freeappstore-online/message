@@ -284,7 +284,7 @@ export function Contacts({ currentUser, onBack, onStartChat }: ContactsProps) {
                     </div>
                     <button
                       onClick={() => sendRequest(`gh:${gh.id}`)}
-                      disabled={actionLoading === String(gh.id)}
+                      disabled={actionLoading === `gh:${gh.id}`}
                       className="rounded-lg p-2 text-[var(--muted)] transition hover:bg-[var(--line)] disabled:opacity-40"
                       title="Add friend"
                     >

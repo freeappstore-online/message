@@ -13,6 +13,15 @@ interface ChatListProps {
   onRefresh: () => void
 }
 
+function extractPeerUid(chatId: string, myUid: string): string | null {
+  if (chatId.startsWith(myUid + '|')) return chatId.slice(myUid.length + 1)
+  if (chatId.endsWith('|' + myUid)) return chatId.slice(0, chatId.length - myUid.length - 1)
+  // Legacy format with ':' delimiter
+  if (chatId.startsWith(myUid + ':')) return chatId.slice(myUid.length + 1)
+  if (chatId.endsWith(':' + myUid)) return chatId.slice(0, chatId.length - myUid.length - 1)
+  return null
+}
+
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts
   const mins = Math.floor(diff / 60000)
@@ -123,12 +132,13 @@ export function ChatList({ chats, currentUser, onSelect, onNewChat, onContacts, 
                 <li key={msg.id}>
                   <button
                     onClick={async () => {
+                      const isMine = msg.from === currentUser.id
+                      const peerUid = isMine ? extractPeerUid(msg.chatId, currentUser.id) : msg.from
+                      const peerLogin = isMine ? (peerUid ? '' : '') : msg.fromLogin
                       const chat = await getOrCreateChat({
                         id: msg.chatId,
-                        peerLogin: msg.from === currentUser.id ? '?' : msg.fromLogin,
-                        peerUid: msg.from === currentUser.id
-                          ? msg.chatId.split(':').find((id) => id !== currentUser.id) ?? msg.from
-                          : msg.from,
+                        peerLogin: peerLogin || 'unknown',
+                        peerUid: peerUid || msg.from,
                         lastMessage: msg.text,
                         lastTs: msg.ts,
                       })
