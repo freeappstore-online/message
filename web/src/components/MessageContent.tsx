@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-const URL_REGEX = /(https?:\/\/[^\s<]+)/g
+const URL_PATTERN = /https?:\/\/[^\s<]+/g
 const IMAGE_EXT = /\.(png|jpg|jpeg|gif|webp|svg)(\?[^\s]*)?$/i
 
 interface MessageContentProps {
@@ -46,37 +46,57 @@ function ImagePreview({ url }: { url: string }) {
   )
 }
 
-export function MessageContent({ text, isMine }: MessageContentProps) {
-  const parts = text.split(URL_REGEX)
-  const imageUrls: string[] = []
+interface ParsedPart {
+  type: 'text' | 'link' | 'image'
+  value: string
+}
 
-  const rendered = parts.map((part, i) => {
-    if (URL_REGEX.test(part)) {
-      URL_REGEX.lastIndex = 0
-      if (isImageUrl(part)) {
-        imageUrls.push(part)
-        return null
-      }
-      return (
-        <a
-          key={i}
-          href={part}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`underline break-all ${isMine ? 'text-blue-100' : 'text-[var(--accent)]'}`}
-        >
-          {prettifyUrl(part)}
-        </a>
-      )
+function parseMessage(text: string): ParsedPart[] {
+  const parts: ParsedPart[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  const regex = new RegExp(URL_PATTERN.source, 'g')
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', value: text.slice(lastIndex, match.index) })
     }
-    return part || null
-  })
+    const url = match[0]
+    parts.push({ type: isImageUrl(url) ? 'image' : 'link', value: url })
+    lastIndex = regex.lastIndex
+  }
+  if (lastIndex < text.length) {
+    parts.push({ type: 'text', value: text.slice(lastIndex) })
+  }
+  return parts
+}
+
+export function MessageContent({ text, isMine }: MessageContentProps) {
+  const parts = parseMessage(text)
+  const textAndLinks = parts.filter((p) => p.type !== 'image')
+  const images = parts.filter((p) => p.type === 'image')
 
   return (
     <>
-      <p className="whitespace-pre-wrap break-words">{rendered}</p>
-      {imageUrls.map((url, i) => (
-        <ImagePreview key={i} url={url} />
+      <p className="whitespace-pre-wrap break-words">
+        {textAndLinks.map((part, i) => {
+          if (part.type === 'link') {
+            return (
+              <a
+                key={i}
+                href={part.value}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`underline break-all ${isMine ? 'text-blue-100' : 'text-[var(--accent)]'}`}
+              >
+                {prettifyUrl(part.value)}
+              </a>
+            )
+          }
+          return <span key={i}>{part.value}</span>
+        })}
+      </p>
+      {images.map((img, i) => (
+        <ImagePreview key={i} url={img.value} />
       ))}
     </>
   )

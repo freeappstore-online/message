@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { MessageCircle, Plus, Users, Search, X, Trash2 } from 'lucide-react'
-import { deleteChat, searchMessages, type Chat, type StoredMessage } from '../lib/db'
+import { deleteChat, searchMessages, getOrCreateChat, type Chat, type StoredMessage } from '../lib/db'
 import type { User } from '@freeappstore/sdk'
 
 interface ChatListProps {
@@ -120,14 +120,33 @@ export function ChatList({ chats, currentUser, onSelect, onNewChat, onContacts, 
           ) : (
             <ul>
               {searchResults.map((msg) => (
-                <li key={msg.id} className="border-b border-[var(--line)] px-4 py-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-[var(--accent)]">@{msg.fromLogin}</span>
-                    <span className="text-xs text-[var(--muted)]">
-                      {new Date(msg.ts).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                    </span>
-                  </div>
-                  <p className="mt-1 truncate text-sm text-[var(--ink)]">{msg.text}</p>
+                <li key={msg.id}>
+                  <button
+                    onClick={async () => {
+                      const chat = await getOrCreateChat({
+                        id: msg.chatId,
+                        peerLogin: msg.from === currentUser.id ? '?' : msg.fromLogin,
+                        peerUid: msg.from === currentUser.id
+                          ? msg.chatId.split(':').find((id) => id !== currentUser.id) ?? msg.from
+                          : msg.from,
+                        lastMessage: msg.text,
+                        lastTs: msg.ts,
+                      })
+                      setSearchMode(false)
+                      setSearchQuery('')
+                      setSearchResults([])
+                      onSelect(chat)
+                    }}
+                    className="w-full border-b border-[var(--line)] px-4 py-3 text-left transition hover:bg-[var(--line)]"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-[var(--accent)]">@{msg.fromLogin}</span>
+                      <span className="text-xs text-[var(--muted)]">
+                        {new Date(msg.ts).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate text-sm text-[var(--ink)]">{msg.text}</p>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -145,15 +164,19 @@ export function ChatList({ chats, currentUser, onSelect, onNewChat, onContacts, 
         ) : (
           <ul>
             {chats.map((chat) => (
-              <li key={chat.id} className="relative">
+              <li
+                key={chat.id}
+                className="flex border-b border-[var(--line)]"
+              >
                 <button
                   onClick={() => onSelect(chat)}
-                  className="flex w-full items-center gap-3 border-b border-[var(--line)] px-4 py-3 text-left transition hover:bg-[var(--line)]"
+                  onContextMenu={(e) => { e.preventDefault(); setDeleteTarget(chat) }}
+                  className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition hover:bg-[var(--line)]"
                 >
                   <img
                     src={`https://github.com/${chat.peerLogin}.png?size=80`}
                     alt=""
-                    className="h-10 w-10 rounded-full"
+                    className="h-10 w-10 flex-shrink-0 rounded-full"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between">
@@ -164,8 +187,8 @@ export function ChatList({ chats, currentUser, onSelect, onNewChat, onContacts, 
                   </div>
                 </button>
                 <button
-                  onClick={(e) => { e.stopPropagation(); setDeleteTarget(chat) }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-[var(--muted)] opacity-0 transition hover:bg-red-500/20 hover:text-red-400 [li:hover_&]:opacity-100"
+                  onClick={() => setDeleteTarget(chat)}
+                  className="flex items-center px-3 text-[var(--muted)] transition hover:bg-red-500/20 hover:text-red-400"
                   title="Delete conversation"
                 >
                   <Trash2 size={14} />

@@ -105,30 +105,57 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
     }
   }, [chat.id, scrollToBottom])
 
+  const typingRoomRef = useRef<Room | null>(null)
+  const typingCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      typingRoomRef.current?.close()
+      typingRoomRef.current = null
+      if (typingCloseTimer.current) clearTimeout(typingCloseTimer.current)
+    }
+  }, [chat.peerUid])
+
   const sendTypingIndicator = () => {
     const now = Date.now()
     if (now - lastTypingSent.current < 2000) return
     lastTypingSent.current = now
+
+    const typingPayload = {
+      type: 'typing' as const,
+      fromUid: currentUser.id,
+      fromLogin: currentUser.login,
+      chatId: chat.id,
+    }
+
+    if (typingRoomRef.current && typingRoomRef.current.state === 'open') {
+      typingRoomRef.current.send(typingPayload)
+      if (typingCloseTimer.current) clearTimeout(typingCloseTimer.current)
+      typingCloseTimer.current = setTimeout(() => {
+        typingRoomRef.current?.close()
+        typingRoomRef.current = null
+      }, 5000)
+      return
+    }
+
+    typingRoomRef.current?.close()
     const fas = getFas()
-    const peerRoom = fas.rooms.join(`inbox-${chat.peerUid}`)
-    const sendAndClose = () => {
-      peerRoom.send({
-        type: 'typing',
-        fromUid: currentUser.id,
-        fromLogin: currentUser.login,
-        chatId: chat.id,
-      })
-      setTimeout(() => peerRoom.close(), 1000)
-    }
-    if (peerRoom.state === 'open') {
-      sendAndClose()
-    } else {
-      const off = peerRoom.onConnectionState((s: ConnectionState) => {
-        if (s === 'open') { off(); sendAndClose() }
-        else if (s === 'error' || s === 'closed') { off() }
-      })
-      setTimeout(() => { off(); peerRoom.close() }, 3000)
-    }
+    const room = fas.rooms.join(`inbox-${chat.peerUid}`)
+    typingRoomRef.current = room
+    const off = room.onConnectionState((s: ConnectionState) => {
+      if (s === 'open') {
+        off()
+        room.send(typingPayload)
+        if (typingCloseTimer.current) clearTimeout(typingCloseTimer.current)
+        typingCloseTimer.current = setTimeout(() => {
+          room.close()
+          if (typingRoomRef.current === room) typingRoomRef.current = null
+        }, 5000)
+      } else if (s === 'error' || s === 'closed') {
+        off()
+        if (typingRoomRef.current === room) typingRoomRef.current = null
+      }
+    })
   }
 
   const setDelivery = (msgId: string, status: DeliveryStatus) => {
@@ -312,7 +339,18 @@ export function ChatView({ chat, currentUser, onBack }: ChatViewProps) {
             <p className="truncate px-3 py-2 text-xs text-[var(--muted)]">{contextMsg.text}</p>
             <button
               onClick={async () => {
-                await navigator.clipboard.writeText(contextMsg.text)
+                try {
+                  await navigator.clipboard.writeText(contextMsg.text)
+                } catch {
+                  const ta = document.createElement('textarea')
+                  ta.value = contextMsg.text
+                  ta.style.position = 'fixed'
+                  ta.style.opacity = '0'
+                  document.body.appendChild(ta)
+                  ta.select()
+                  document.execCommand('copy')
+                  document.body.removeChild(ta)
+                }
                 setContextMsg(null)
                 setToast('Copied')
                 setTimeout(() => setToast(''), 1500)

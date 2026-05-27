@@ -60,7 +60,7 @@ export default function App() {
       if (msgs.length > 0) refreshChats()
     })
 
-    // Retry sending outbox messages
+    // Retry sending outbox messages (sequential to avoid room exhaustion)
     drainOutbox().then(async (msgs) => {
       for (const msg of msgs) {
         const peerRoom = fas.rooms.join(`inbox-${msg.toUid}`)
@@ -83,7 +83,8 @@ export default function App() {
           })
           try { await removeFromOutbox(msg.id) } catch { /* non-fatal */ }
         }
-        setTimeout(() => peerRoom.close(), 2000)
+        peerRoom.close()
+        await new Promise((r) => setTimeout(r, 200))
       }
     })
   }, [user, fas.rooms, refreshChats])
