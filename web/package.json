@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@freeappstore/sdk": "^0.14.4",
+    "@freeappstore/sdk": "^0.16.39",
     "lucide-react": "^1.14.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
@@ -21,6 +21,7 @@
     "@vitejs/plugin-react": "^6.0.1",
     "tailwindcss": "^4.2.4",
     "typescript": "~6.0.2",
-    "vite": "^8.0.10"
+    "vite": "^8.0.10",
+    "vite-plugin-pwa": "^1.0"
   }
 }
